@@ -1,7 +1,6 @@
 # TFG — Diseño y validación de una plataforma segura de APIs para integración bancaria
 
-**Autor:** Antonio Martos Gavilán  
-**Tutor:** Oscar Martín Salas  
+**Autor:** Antonio Martos Gavilán   
 **Titulación:** Grado de Ingeniería Informática — Sistemas de Gestión del Conocimiento  
 **Institución:** Universitat Oberta de Catalunya (UOC)  
 **Curso:** 2025-26
@@ -21,6 +20,7 @@ La solución demuestra los siguientes principios:
 - **Autenticación JWT** con validación RS256 en el gateway.
 - **Autorización diferencial** por roles de aplicación en los backends .NET.
 - **Observabilidad operativa** con Prometheus y Grafana.
+- **Mensajería asíncrona opcional** mediante un consumidor de eventos de cliente creado.
 - **Validación de seguridad** alineada con OWASP API Security Top 10.
 
 > Este repositorio no debe contener credenciales reales, secretos de cliente, tokens JWT, claves privadas ni ficheros `.env` con configuración sensible.
@@ -29,9 +29,9 @@ La solución demuestra los siguientes principios:
 
 ## Arquitectura de la PoC
 
-La PoC se ejecuta en local mediante contenedores Docker y se apoya en Microsoft Entra ID únicamente para la emisión de tokens JWT.
+La PoC se ejecuta en local mediante contenedores Docker y se apoya en Microsoft Entra ID para la emisión de tokens JWT.
 
-```
+```text
 Cliente técnico
      │
      │ OAuth2 client credentials
@@ -45,42 +45,63 @@ Kong Gateway
      ├── ClientesApi (.NET 8)
      └── CuentasApi (.NET 8)
 
+ClientesApi ──> evento cliente creado ──> ClienteCreadoConsumer
+
 Prometheus ──> métricas Kong / APIs
 Grafana    ──> visualización operativa
 ```
 
 ---
 
-## Estructura del repositorio
+## Estructura actual del repositorio
 
-```
-tfg-api-poc/
-├── docker-compose.yml
-├── prometheus.yml
-├── .env.example
+```text
+tfg-plataforma-segura-apis/
+├── docker/
+│   └── docker-compose.yml              # Orquestación local de la PoC
+│
+├── kong/
+│   ├── kong-setup.md                   # Documentación de configuración de Kong
+│   └── kong-setup.sh                   # Script de configuración de servicios, rutas y plugins
+│
+├── observability/
+│   └── prometheus/
+│       └── prometheus.yml              # Configuración de scraping de Prometheus
+│
+├── src/
+│   ├── ClienteCreadoConsumer/          # Worker .NET para consumo de eventos asíncronos
+│   │   ├── Properties/
+│   │   ├── appsettings.json
+│   │   ├── ClienteCreadoConsumer.csproj
+│   │   ├── Program.cs
+│   │   └── Worker.cs
+│   │
+│   ├── ClientesApi/                    # Solución/proyecto de la API REST de Clientes
+│   │   └── ClientesApi/
+│   │       ├── ClientesApi.csproj
+│   │       ├── Program.cs
+│   │       ├── Dockerfile
+│   │       └── Controllers/
+│   │
+│   └── CuentasApi/                     # Solución/proyecto de la API REST de Cuentas
+│       └── CuentasApi/
+│           ├── CuentasApi.csproj
+│           ├── Program.cs
+│           ├── Dockerfile
+│           └── Controllers/
+│
+├── .env.example                        # Plantilla segura de variables de entorno
+├── .gitattributes
 ├── .gitignore
+├── benchmark_gateway_overhead.sh       # Script de medición de overhead del gateway
+├── get_token.sh                        # Script de obtención de JWT desde Entra ID
 ├── README.md
-├── get_token.sh
-├── benchmark_gateway_overhead.sh
 │
-├── ClientesApi/
-│   ├── ClientesApi.csproj
-│   ├── Dockerfile
-│   ├── Program.cs
-│   └── Controllers/
-│       └── ClientesController.cs
-│
-├── CuentasApi/
-│   ├── CuentasApi.csproj
-│   ├── Dockerfile
-│   ├── Program.cs
-│   └── Controllers/
-│       └── CuentasController.cs
-│
-└── docs/
-    ├── kong-setup.md
-    └── kong-setup.sh
+├── env.example.txt                     # Fichero heredado: sustituible por .env.example
+└── gitignore.txt                       # Fichero heredado: sustituible por .gitignore
 ```
+
+> Recomendación: si `.env.example` y `.gitignore` ya están correctamente versionados, los ficheros `env.example.txt` y `gitignore.txt` pueden eliminarse para evitar duplicidades.
 
 ---
 
@@ -124,7 +145,7 @@ El fichero `.env` está excluido mediante `.gitignore` y **no debe subirse al re
 ### 1. Clonar el repositorio
 
 ```bash
-git clone https://github.com/<usuario>/tfg-plataforma-segura-apis.git
+git clone https://github.com/amartosg/tfg-plataforma-segura-apis.git
 cd tfg-plataforma-segura-apis
 ```
 
@@ -137,19 +158,27 @@ nano .env
 
 ### 3. Arrancar la PoC
 
+El fichero `docker-compose.yml` se encuentra dentro del directorio `docker/`, por lo que debe indicarse explícitamente con `-f` si se ejecuta desde la raíz del repositorio:
+
 ```bash
-docker compose up -d --build
-docker compose ps
+docker compose -f docker/docker-compose.yml up -d --build
+docker compose -f docker/docker-compose.yml ps
+```
+
+Para detener el entorno:
+
+```bash
+docker compose -f docker/docker-compose.yml down
 ```
 
 ### 4. Configurar Kong Gateway
 
 ```bash
-chmod +x docs/kong-setup.sh
-./docs/kong-setup.sh
+chmod +x kong/kong-setup.sh
+./kong/kong-setup.sh
 ```
 
-El script debe registrar los servicios, rutas y plugins necesarios en Kong Gateway, incluyendo validación JWT, rate limiting y métricas Prometheus.
+El script registra los servicios, rutas y plugins necesarios en Kong Gateway, incluyendo validación JWT, rate limiting y métricas Prometheus.
 
 ### 5. Obtener un token JWT
 
@@ -198,6 +227,12 @@ Este reparto de responsabilidades permite separar autenticación y autorización
 
 ## Observabilidad
 
+La configuración de Prometheus se encuentra en:
+
+```text
+observability/prometheus/prometheus.yml
+```
+
 | Componente | URL local | Credenciales |
 |------------|-----------|--------------|
 | Prometheus | `http://localhost:9090` | Sin autenticación local |
@@ -217,6 +252,14 @@ sum by (code) (rate(kong_http_status[5m]))
 ```promql
 rate(kong_latency_ms_sum[1m]) / rate(kong_latency_ms_count[1m])
 ```
+
+---
+
+## Mensajería asíncrona
+
+El repositorio incluye el proyecto `src/ClienteCreadoConsumer`, que representa un consumidor de eventos asociado al caso de uso de alta de cliente. Este componente permite documentar y validar, de forma acotada, una evolución hacia integración asíncrona basada en eventos.
+
+En el alcance académico de la PoC, la mensajería se considera un elemento complementario. El núcleo principal de validación sigue siendo la plataforma segura de APIs formada por Kong Gateway, Microsoft Entra ID, las APIs .NET y la capa de observabilidad.
 
 ---
 
@@ -308,8 +351,14 @@ Comprobar que no se incluyen:
 - Capturas con datos sensibles.
 - Identificadores internos no necesarios para la defensa académica.
 
-Si un secreto real se ha subido previamente al repositorio, debe considerarse comprometido y rotarse en Microsoft Entra ID antes de continuar.
+Comprobación rápida antes del `push`:
 
+```bash
+grep -RInE "client_secret|password|BEGIN PRIVATE KEY|access_token|refresh_token" . \
+  --exclude-dir=.git \
+  --exclude=README.md \
+  --exclude=.env.example
+```
 ---
 
 ## Referencias
