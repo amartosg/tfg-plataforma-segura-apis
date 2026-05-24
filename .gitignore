@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# .gitignore — PoC TFG plataforma segura de APIs
+# ─────────────────────────────────────────────────────────────────────────────
+
+# .NET build outputs
+bin/
+obj/
+TestResults/
+coverage/
+*.user
+*.suo
+*.rsuser
+*.sln.DotSettings.user
+.vs/
+
+# Entorno local y secretos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.crt
+*secret*
+*credentials*
+appsettings.Development.json
+appsettings.Local.json
+
+# Docker / Compose local
+docker-compose.override.yml
+
+# Resultados generados localmente
+overhead_results_*.txt
+*.log
+logs/
+
+# IDE / editores
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
